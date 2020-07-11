@@ -1,42 +1,55 @@
 package gojob
 
-type Callback func(...interface{}) interface{}
-type OnSuccess Callback
-type OnFail Callback
+import (
+	"sync"
 
-// 一个任务的数据结构
-type Job struct {
-	CreatedAt int64 // 创建时间
-	StartedAt int64 // 开始时间
+	"github.com/bwmarrin/snowflake"
+)
 
-	// 失败的调度机制，第一次失败后会触发
-	// 数组元素i是第i+1次失败以后的重启间隔
-	Schedul []int64
+var node *snowflake.Node
 
-	// 记录当前失败次数
-	Current int64
-
-	// 任务，是一个由调用者自行定义的回调函数
-	Job Callback
-
-	// 成功的回调
-	OnSuccess OnSuccess
-
-	// 失败的回调
-	OnFail OnFail
+func init() {
+	var err error
+	node, err = snowflake.NewNode(1)
+	if err != nil {
+		panic(err)
+	}
 }
 
-// 开始一个任务
-func (j *Job) Start() {}
+type GoJob struct {
+	sync.Mutex
+	jobs []*Job
+}
 
-// 任务成功
-func (j *Job) Success() {}
+func (g *GoJob) AddJob(job *Job) {
+	g.Lock()
+	job.setid(node.Generate().Base36())
+	g.jobs = append(g.jobs, job)
+	g.Unlock()
+}
 
-// 任务单次失败
-func (j *Job) Fail() {}
+func (g *GoJob) Schedule() {
+}
 
-// 任务多次尝试后仍然失败
-func (j *Job) FinnallyFail() {}
+func (g *GoJob) Size() int {
+	return len(g.jobs)
+}
 
-func GoJob() {
+func (g *GoJob) Abort(id string) {
+	size := len(g.jobs)
+	if size == 0 {
+		return
+	}
+
+	for index, job := range g.jobs {
+		if job.id == id {
+			job.Abort()
+			g.jobs = g.jobs[0:index]
+			next := index + 1
+			if next == size {
+				return
+			}
+			g.jobs = append(g.jobs, g.jobs[next:size]...)
+		}
+	}
 }
